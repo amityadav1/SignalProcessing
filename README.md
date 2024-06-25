@@ -10,6 +10,7 @@ Original PGM Image
 
 
 Min Filter Applied:
+
 ![Filter Min pgm image](https://github.com/amityadav1/SignalProcessing/blob/main/data/Lena_boxFilterMin.png)
 
 ## Key Concepts
