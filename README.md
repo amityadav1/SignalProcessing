@@ -2,7 +2,7 @@
 
 ## Description
 
-A NPP CUDA Sample that demonstrates how to use NPP FilterBox function to perform a Box Filter.
+A NPP CUDA Sample that demonstrates how to use NPP FilterBox function to perform a Box Filter and Box Filter Min. 
 
 ## Key Concepts
 

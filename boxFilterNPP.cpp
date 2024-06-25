@@ -40,6 +40,7 @@
 #include <string.h>
 #include <fstream>
 #include <iostream>
+#include <tuple>
 
 #include <cuda_runtime.h>
 #include <npp.h>
@@ -68,14 +69,185 @@ bool printfNPPinfo(int argc, char *argv[])
   return bVal;
 }
 
+// Get the input file name. Use a default value if no name is provided
+// on command line. 
+std::string getInputFileName(int argc, char *argv[])
+{
+  std::string sFilename;
+  char *filePath;
+
+  findCudaDevice(argc, (const char **)argv);
+
+  if (printfNPPinfo(argc, argv) == false)
+  {
+    exit(EXIT_SUCCESS);
+  }
+
+  if (checkCmdLineFlag(argc, (const char **)argv, "input"))
+  {
+    getCmdLineArgumentString(argc, (const char **)argv, "input", &filePath);
+  }
+  else
+  {
+    filePath = sdkFindFilePath("data/Lena.pgm", argv[0]);
+  }
+
+  if (filePath)
+  {
+    sFilename = filePath;
+  }
+  else
+  {
+    sFilename = "data/Lena.pgm";
+  }
+
+  // if we specify the filename at the command line, then we only test
+  // sFilename[0].
+  int file_errors = 0;
+  std::ifstream infile(sFilename.data(), std::ifstream::in);
+
+  if (infile.good())
+  {
+    std::cout << "opened: <" << sFilename.data()
+              << "> successfully!" << std::endl;
+    file_errors = 0;
+    infile.close();
+  }
+  else
+  {
+    std::cout << "Unable to open: <" << sFilename.data() << ">"
+              << std::endl;
+    file_errors++;
+    infile.close();
+  }
+
+  if (file_errors > 0)
+  {
+    exit(EXIT_FAILURE);
+  }
+ 
+  return sFilename;
+}
+
+
+// Get the output file name. If no name is provided in the command line
+// return the inputfile name with the provided suffix.
+std::string getOutputFileName(std::string sFilename, std::string suffix, int argc, char *argv[])
+{
+  std::string sResultFilename = sFilename;
+
+  std::string::size_type dot = sResultFilename.rfind('.');
+
+  if (dot != std::string::npos)
+  {
+    sResultFilename = sResultFilename.substr(0, dot);
+  }
+
+  sResultFilename += suffix;
+
+  if (checkCmdLineFlag(argc, (const char **)argv, "output"))
+  {
+    char *outputFilePath;
+    getCmdLineArgumentString(argc, (const char **)argv, "output",
+                             &outputFilePath);
+    sResultFilename = outputFilePath;
+  }
+  return sResultFilename;
+}
+
+void processWithBoxFilter(std::string sFilename, int argc, char *argv[])
+{
+  std::string sResultFilename = getOutputFileName(sFilename, "_boxFilter.pgm", argc, argv);
+  // declare a host image object for an 8-bit grayscale image
+  npp::ImageCPU_8u_C1 oHostSrc;
+  // load gray-scale image from disk
+  npp::loadImage(sFilename, oHostSrc);
+  // declare a device image and copy construct from the host image,
+  // i.e. upload host to device
+  npp::ImageNPP_8u_C1 oDeviceSrc(oHostSrc);
+
+  // create struct with box-filter mask size
+  NppiSize oMaskSize = {5, 5};
+
+  NppiSize oSrcSize = {(int)oDeviceSrc.width(), (int)oDeviceSrc.height()};
+  NppiPoint oSrcOffset = {0, 0};
+
+  // create struct with ROI size
+  NppiSize oSizeROI = {(int)oDeviceSrc.width(), (int)oDeviceSrc.height()};
+  // allocate device image of appropriately reduced size
+  npp::ImageNPP_8u_C1 oDeviceDst(oSizeROI.width, oSizeROI.height);
+  // set anchor point inside the mask to (oMaskSize.width / 2,
+  // oMaskSize.height / 2) It should round down when odd
+  NppiPoint oAnchor = {oMaskSize.width / 2, oMaskSize.height / 2};
+
+  // run box filter
+  NPP_CHECK_NPP(nppiFilterBoxBorder_8u_C1R(
+      oDeviceSrc.data(), oDeviceSrc.pitch(), oSrcSize, oSrcOffset,
+      oDeviceDst.data(), oDeviceDst.pitch(), oSizeROI, oMaskSize, oAnchor,
+      NPP_BORDER_REPLICATE));
+
+  // declare a host image for the result
+  npp::ImageCPU_8u_C1 oHostDst(oDeviceDst.size());
+  // and copy the device result data into it
+  oDeviceDst.copyTo(oHostDst.data(), oHostDst.pitch());
+
+  saveImage(sResultFilename, oHostDst);
+  std::cout << "Saved image: " << sResultFilename << std::endl;
+
+  nppiFree(oDeviceSrc.data());
+  nppiFree(oDeviceDst.data());
+}
+
+void processWithBoxFilterMin(std::string sFilename, int argc, char *argv[])
+{
+  std::string sResultFilename = getOutputFileName(sFilename, "_boxFilterMin.pgm", argc, argv);
+  // declare a host image object for an 8-bit grayscale image
+  npp::ImageCPU_8u_C1 oHostSrc;
+  // load gray-scale image from disk
+  npp::loadImage(sFilename, oHostSrc);
+  // declare a device image and copy construct from the host image,
+  // i.e. upload host to device
+  npp::ImageNPP_8u_C1 oDeviceSrc(oHostSrc);
+
+  // create struct with box-filter mask size
+  NppiSize oMaskSize = {5, 5};
+
+  NppiSize oSrcSize = {(int)oDeviceSrc.width(), (int)oDeviceSrc.height()};
+  NppiPoint oSrcOffset = {0, 0};
+
+  // create struct with ROI size
+  NppiSize oSizeROI = {(int)oDeviceSrc.width(), (int)oDeviceSrc.height()};
+  // allocate device image of appropriately reduced size
+  npp::ImageNPP_8u_C1 oDeviceDst(oSizeROI.width, oSizeROI.height);
+  // set anchor point inside the mask to (oMaskSize.width / 2,
+  // oMaskSize.height / 2) It should round down when odd
+  NppiPoint oAnchor = {oMaskSize.width / 2, oMaskSize.height / 2};
+
+  // run box filter min
+  NPP_CHECK_NPP(nppiFilterMin_8u_C1R(
+      oDeviceSrc.data(), oDeviceSrc.pitch(),
+      oDeviceDst.data(), oDeviceDst.pitch(), oSizeROI, oMaskSize, oAnchor));
+
+  // declare a host image for the result
+  npp::ImageCPU_8u_C1 oHostDst(oDeviceDst.size());
+  // and copy the device result data into it
+  oDeviceDst.copyTo(oHostDst.data(), oHostDst.pitch());
+
+  saveImage(sResultFilename, oHostDst);
+  std::cout << "Saved image: " << sResultFilename << std::endl;
+
+  nppiFree(oDeviceSrc.data());
+  nppiFree(oDeviceDst.data());
+}
+
 int main(int argc, char *argv[])
 {
   printf("%s Starting...\n\n", argv[0]);
 
   try
   {
-    std::string sFilename;
-    char *filePath;
+    // std::string sFilename;
+    // char *filePath;
 
     findCudaDevice(argc, (const char **)argv);
 
@@ -84,107 +256,9 @@ int main(int argc, char *argv[])
       exit(EXIT_SUCCESS);
     }
 
-    if (checkCmdLineFlag(argc, (const char **)argv, "input"))
-    {
-      getCmdLineArgumentString(argc, (const char **)argv, "input", &filePath);
-    }
-    else
-    {
-      filePath = sdkFindFilePath("Lena.pgm", argv[0]);
-    }
-
-    if (filePath)
-    {
-      sFilename = filePath;
-    }
-    else
-    {
-      sFilename = "Lena.pgm";
-    }
-
-    // if we specify the filename at the command line, then we only test
-    // sFilename[0].
-    int file_errors = 0;
-    std::ifstream infile(sFilename.data(), std::ifstream::in);
-
-    if (infile.good())
-    {
-      std::cout << "boxFilterNPP opened: <" << sFilename.data()
-                << "> successfully!" << std::endl;
-      file_errors = 0;
-      infile.close();
-    }
-    else
-    {
-      std::cout << "boxFilterNPP unable to open: <" << sFilename.data() << ">"
-                << std::endl;
-      file_errors++;
-      infile.close();
-    }
-
-    if (file_errors > 0)
-    {
-      exit(EXIT_FAILURE);
-    }
-
-    std::string sResultFilename = sFilename;
-
-    std::string::size_type dot = sResultFilename.rfind('.');
-
-    if (dot != std::string::npos)
-    {
-      sResultFilename = sResultFilename.substr(0, dot);
-    }
-
-    sResultFilename += "_boxFilter.pgm";
-
-    if (checkCmdLineFlag(argc, (const char **)argv, "output"))
-    {
-      char *outputFilePath;
-      getCmdLineArgumentString(argc, (const char **)argv, "output",
-                               &outputFilePath);
-      sResultFilename = outputFilePath;
-    }
-
-    // declare a host image object for an 8-bit grayscale image
-    npp::ImageCPU_8u_C1 oHostSrc;
-    // load gray-scale image from disk
-    npp::loadImage(sFilename, oHostSrc);
-    // declare a device image and copy construct from the host image,
-    // i.e. upload host to device
-    npp::ImageNPP_8u_C1 oDeviceSrc(oHostSrc);
-
-    // create struct with box-filter mask size
-    NppiSize oMaskSize = {5, 5};
-
-    NppiSize oSrcSize = {(int)oDeviceSrc.width(), (int)oDeviceSrc.height()};
-    NppiPoint oSrcOffset = {0, 0};
-
-    // create struct with ROI size
-    NppiSize oSizeROI = {(int)oDeviceSrc.width(), (int)oDeviceSrc.height()};
-    // allocate device image of appropriately reduced size
-    npp::ImageNPP_8u_C1 oDeviceDst(oSizeROI.width, oSizeROI.height);
-    // set anchor point inside the mask to (oMaskSize.width / 2,
-    // oMaskSize.height / 2) It should round down when odd
-    NppiPoint oAnchor = {oMaskSize.width / 2, oMaskSize.height / 2};
-
-    // run box filter
-    NPP_CHECK_NPP(nppiFilterBoxBorder_8u_C1R(
-        oDeviceSrc.data(), oDeviceSrc.pitch(), oSrcSize, oSrcOffset,
-        oDeviceDst.data(), oDeviceDst.pitch(), oSizeROI, oMaskSize, oAnchor,
-        NPP_BORDER_REPLICATE));
-
-    // declare a host image for the result
-    npp::ImageCPU_8u_C1 oHostDst(oDeviceDst.size());
-    // and copy the device result data into it
-    oDeviceDst.copyTo(oHostDst.data(), oHostDst.pitch());
-
-    saveImage(sResultFilename, oHostDst);
-    std::cout << "Saved image: " << sResultFilename << std::endl;
-
-    nppiFree(oDeviceSrc.data());
-    nppiFree(oDeviceDst.data());
-
+    auto sFilename = getInputFileName(argc, argv);
+   // processWithBoxFilter(sFilename, argc, argv);
+    processWithBoxFilterMin(sFilename, argc, argv);
     exit(EXIT_SUCCESS);
   }
   catch (npp::Exception &rException)
