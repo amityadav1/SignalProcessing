@@ -257,7 +257,7 @@ int main(int argc, char *argv[])
     }
 
     auto sFilename = getInputFileName(argc, argv);
-   // processWithBoxFilter(sFilename, argc, argv);
+    processWithBoxFilter(sFilename, argc, argv);
     processWithBoxFilterMin(sFilename, argc, argv);
     exit(EXIT_SUCCESS);
   }
