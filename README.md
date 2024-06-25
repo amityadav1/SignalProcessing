@@ -4,9 +4,9 @@
 
 A NPP CUDA Sample that demonstrates how to use NPP FilterBox function to perform a Box Filter and Box Filter Min. 
 
-![Original pgm image](https://github.com/amityadav1/SignalProcessing/blob/main/data/Lena.pgm)
+![Original pgm image](https://github.com/amityadav1/SignalProcessing/blob/main/data/Lena.png)
 
-![Filter Min pgm image](https://github.com/amityadav1/SignalProcessing/blob/main/data/Lena_boxFilterMin.pgm)
+![Filter Min pgm image](https://github.com/amityadav1/SignalProcessing/blob/main/data/Lena_boxFilterMin.png)
 
 ## Key Concepts
 
